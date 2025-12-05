@@ -10,105 +10,16 @@ import time
 
 import logging
 import os
-
+from .infra import *
 logger = logging.getLogger('my_logger')
 logger.propagate = False
 logger.setLevel(logging.DEBUG)
 
 logging.getLogger().setLevel(logging.ERROR)
-# init
 port = sys.argv[1]
-# has_pass = (sys.argv[2]) # 1 means has pass
-# ser = serial.Serial(port, 9600, timeout=1)
-
-# send
-    # devide package
-    # for package
-        # add header
-        # timeout = avertimeout // timeoutcount
-        # while (not recived)
-            # write
-            # waitfor ACK
-            # if recived
-                # break
-            # if timeout:
-                # timeout = 1.5 timeout
-                # avertimeout += timeout
-                # timeoutcount += 1
-                # continue
-
-# recv
-    # read package
-    # parse package
-    # send ACK
-    
-
-# handshake 
-
-
-# mainloop
-while True:
-    # if has pass
-        # if has file in queue
-            # send
-            # if sendfile end
-            # getACKed
-            # if pass-req flag
-                # start pass-ex
-        # if not
-            # heartbeat
-            # if heartbeat with pass-req
-            # set pass-req flag
-
-    # else no pass
-        # if recv-file in queue
-            # recv file
-        # recv heartbeat
-        # if need pass-ex
-            # send ACK with pass-req
-        # else
-            # send ACK
-    break
-
-# protocol
-# 4-byte magic number
-MAGIC_BYTES = b'\xFF\xC0\xFF\xEE'
-MAX_PAYLOAD = 150  # bytes
-# Header: checksum(4), seq(1), len(2)
-HEADER_FMT = '>IBH'
-HEADER_SIZE = struct.calcsize(HEADER_FMT)
-CHKSUM_SIZE = 4
-
 
 async_time = 5
 # ser = 
-# atomatic send op
-def send_frame(payload: bytes, seq: int):
-    global ser
-    length = len(payload)
-    # first set checksum to 0
-    header = struct.pack(HEADER_FMT, 0, seq, length)
-    chksum = zlib.crc32(header + payload)
-    header = struct.pack(HEADER_FMT, chksum, seq, length)
-    payload = MAGIC_BYTES + header + payload
-    ser.write(payload)
-    logger.debug(f"write to serial: {payload}")
-    return len(payload)
-
-# atomatic recv op
-def read_exact(size: int, deadline: int) -> bytes:
-    global ser
-    buf = bytearray()
-    start_time = int(time.time())
-    while len(buf) < size and (time.time() - start_time) < deadline:
-        chunk = ser.read(size - len(buf))
-        logger.debug(f"read from serial: {chunk}")
-
-        if not chunk:
-            continue
-        buf.extend(chunk)
-    return bytes(buf)
-
 def receive_frame(seq: int, deadline: int):
     logging.info(f"enter receiving mode")
     data = bytearray()
@@ -137,36 +48,6 @@ def receive_frame(seq: int, deadline: int):
         logger.debug(f"receive from serial: {payload}")
         return payload
     return None
-
-# def handshake():
-#     if has_pass == 1:
-#         receive_sender_flag = False
-#         while True:
-#             if receive_sender_flag == True:
-#                 send_frame(payload="ACK",seq=0)
-#                 if receive_frame(0,async_time) != -1:
-#                     send_frame(payload="HAN_FIN",seq=0)
-#                     break
-#             send_frame(payload=b"Hello From MN",seq=0)
-#             if receive_frame(0,async_time) == -1:
-#                 # no package recived
-#                 continue
-#             else:
-#                 receive_sender_flag = True
-#                 send_frame(payload="ACK",seq=0)
-#                 if receive_frame(0,async_time) != -1:
-#                     send_frame(payload="HAN_FIN",seq=0)
-#                     break
-#     else:
-#         receive_receiver_flag = False
-#         while True:
-#             if receive_frame(0,async_time) == -1:
-#                 continue
-#             else:
-#                 receive_receiver_flag = True
-#                 send_frame(payload=b"ACK",seq=0)
-#                 if receive_frame(0,async_time*2) == -1: # TODO check if get HAN_FIN
-#                     break
 
 def send_frame_with_ack(payload: bytes, seq: int):
     # while True:
@@ -226,13 +107,14 @@ def foreground_shell():
             work_queue.append(cmd[5:])
             print(f"task added: {cmd[5:]}")
 
-
-if __name__ == "__main__":
+def main():
     global ser
-    port = sys.argv[1]
+    # no global declaration needed here.argv[1]
     ser = serial.Serial(port, 9600, timeout=1)
 
     p = Thread(target=background_worker, daemon=True)
     p.start()
 
     foreground_shell()
+    
+main()

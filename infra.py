@@ -1,0 +1,42 @@
+import struct
+import time
+import zlib
+# PROTO CONFIG
+# 4-byte magic number
+MAGIC_BYTES = b'\xFF\xC0\xFF\xEE'
+MAX_PAYLOAD = 150  # bytes
+# Header: checksum(4), seq(1), len(2)
+HEADER_FMT = '>IBH'
+HEADER_SIZE = struct.calcsize(HEADER_FMT)
+CHKSUM_SIZE = 4
+
+# INFRA
+
+# atomatic send op
+def send_frame(payload: bytes, seq: int):
+    global ser
+    global logger
+    length = len(payload)
+    # first set checksum to 0
+    header = struct.pack(HEADER_FMT, 0, seq, length)
+    chksum = zlib.crc32(header + payload)
+    header = struct.pack(HEADER_FMT, chksum, seq, length)
+    payload = MAGIC_BYTES + header + payload
+    ser.write(payload)
+    logger.debug(f"write to serial: {payload}")
+    return len(payload)
+
+# atomatic recv op
+def read_exact(size: int, deadline: int) -> bytes:
+    global ser
+    global logger
+    buf = bytearray()
+    start_time = int(time.time())
+    while len(buf) < size and (time.time() - start_time) < deadline:
+        chunk = ser.read(size - len(buf))
+        logger.debug(f"read from serial: {chunk}")
+
+        if not chunk:
+            continue
+        buf.extend(chunk)
+    return bytes(buf)
