@@ -82,3 +82,13 @@ def receive_frame(seq: int, deadline):
         logger.debug(f"receive from serial: {payload}")
         return remote_seq, payload
     return None, None
+
+def print_log(message):
+    print(f"[LOG] {message}")
+
+def print_success(message):
+    print(f"[+] {message}")
+
+def print_failed(message):
+    print(f"[-] {message}")
+
