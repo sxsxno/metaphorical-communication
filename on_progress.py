@@ -5,6 +5,7 @@ from threading import Thread
 import time
 import os
 import logging
+import hashlib
 import argparse
 # my package
 from .infra import *
@@ -23,6 +24,7 @@ args = parser.parse_args()
 
 port = args.port
 username = args.name
+user_hash = hashlib.md5(username.encode()).digest()[:2]
 async_time = 5
 # ser = 
 
@@ -70,6 +72,14 @@ def receive_frame_with_dispatcher(ack_retry:int=1,timeout=1):
     return None
 
 # =========== File Func =============
+def run_file_send(file_name, file_receiver):
+    recv_hash = hashlib.md5(file_receiver.encode()).digest()[:2]
+    if not handshake(file_receiver=file_receiver):
+        print_failed(f"Handshake with {file_receiver} failed.")
+        return
+    # TODO add authentication
+    
+
 def handshake(file_receiver,timeout=2,retries=3):
     stage_flag = 0
     for _ in range(retries):
@@ -84,8 +94,9 @@ def handshake(file_receiver,timeout=2,retries=3):
         if stage_flag == 1:
             break
     if stage_flag == 0:
-        return 0 # TODO add failed message
+        return False 
     send_frame(b"\x02\x03ACK",0x0)
+    return True
 
 # =========== Discover Func ===========
 user_list = []
@@ -112,10 +123,11 @@ def background_worker():
         elif task[0] == "sendfile":
             file_name = task[1]
             file_receiver = task[2]
-            if not os.path.isfile(filename):
-                print_failed(f"[backend] file not found: {filename}")
+            if not os.path.isfile(file_name):
+                print_failed(f"[backend] file not found: {file_name}")
                 continue
-            handshake(file_receiver=file_receiver)
+            recei_hash = hashlib.md5(file_receiver.encode()).digest()[:2]
+            run_file_send(file_name=file_name, file_receiver=file_receiver)
         elif task[0] == "discover":
             run_discover()
             
