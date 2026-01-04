@@ -47,17 +47,37 @@ def send_frame_with_ack(payload: bytes, seq: int, retries=2, timeout=2):
     return False
 
 last_message =  ""
-def receive_frame_with_dispatcher(ack_retry:int=1,timeout=1):
-    seq, payload = receive_frame(timeout)
+def frame_dispatcher(seq, payload, ack_retry:int=1,mode="unlisten"):
     if payload is None:
         return None
     elif payload == b"\x01\x01ACK":      # repeated ACK
         return None
-    elif payload == b"\x03\x01DISCOVER": # discover others 
+    elif payload[:10] == b"\x03\x01DISCOVER": # discover others 
+        # TODO
+        if mode == "listen":
+            return None
         send_frame(f"\x03\x02{username}".encode())
     elif payload[:2] == b'\x03\x02':     # recieve username 
         user_list.append(payload[2:].decode())
         print_log(user_list)
+    elif payload[:2] == b'\x02\x01': # handshake request
+        if mode == "listen":
+            return None
+        parts = payload.decode().split(":")
+        if len(parts) != 3:
+            print_failed("Invalid handshake request")
+            return None
+        msg_command, file_sender, file_receiver = parts
+        if msg_command != "\x02\x01REQ":
+            print_failed("Invalid handshake command")
+            return None
+        if file_receiver != username:
+            print_failed("Handshake request not for us")
+            return None
+        print_log(f"Handshake request from {file_sender}")
+        # send ACK back
+        send_frame(f"\x02\x02ACK".encode(), seq)
+        return f"\x02{file_sender}"
     else:                                # normal message
         if last_message == payload: # TODO
             print("[-] repeat Message")
@@ -73,17 +93,68 @@ def receive_frame_with_dispatcher(ack_retry:int=1,timeout=1):
 
 # =========== File Func =============
 def run_file_send(file_name, file_receiver):
+    ### CONFIG
+    WINDOW_SIZE = 15
+    ###
     recv_hash = hashlib.md5(file_receiver.encode()).digest()[:2]
     if not handshake(file_receiver=file_receiver):
         print_failed(f"Handshake with {file_receiver} failed.")
         return
     # TODO add authentication
-    
-
+    with open(file_name, "rb") as f:
+        file_data = f.read()
+    per_chunk_size = MAX_PAYLOAD - 3
+    total_packets = len(file_data) // per_chunk_size
+    if total_packets * per_chunk_size < len(file_data):
+        total_packets += 1
+    # send file info first
+    file_hash = hashlib.md5(file_data).hexdigest().encode()
+    # set up packet
+    packet = [0]*(total_packets+1)
+    packet[0] = recv_hash + f"{file_name}:{total_packets}:".encode() + file_hash
+    for i in range(total_packets):
+        id = i + 1
+        chunk = file_data[i*per_chunk_size:(i+1)*per_chunk_size]
+        packet[id] = recv_hash + b":" + chunk
+    stage_count = 0
+    ack_count = 0
+    # windows send  
+    while True:
+        if ack_count == total_packets:
+        for i in range(ack_count, min(ack_count + WINDOW_SIZE, total_packets + 1, 0xff)):
+            packet_id = i + stage_count * 256
+            send_frame(packet[packet_id], seq=packet_id % 256)
+            print_log(f"Sent packet {packet_id}/{total_packets} to {file_receiver}")
+        rseq, rpayload = receive_frame(timeout=2)
+        if rpayload is None:
+            print_failed("Timeout waiting for ACK, resending window.")
+            continue
+        if rpayload[:2] != user_hash:
+            frame_dispatcher(rseq, rpayload, mode="listen")
+            continue
+        elif rpayload[:2] == user_hash:
+            content = rpayload[2:]
+            if content[:5] == b"\x02\x04ACK":
+                if rseq == content[6]:
+                    ack_count = rseq
+                    if rseq == 0xff:
+                        stage_count += 1
+                        ack_count = 0
+                    continue
+                else:
+                    frame_dispatcher(rseq, rpayload, mode="listen")
+                    continue
+            else:
+                frame_dispatcher(rseq, rpayload, mode="listen")
+                continue
+            
+        
+        
 def handshake(file_receiver,timeout=2,retries=3):
     stage_flag = 0
     for _ in range(retries):
-        send_frame(f"\x02\x01REQ:{username}:{file_receiver}".encode(),0xFF)
+        file_sender = username
+        send_frame(f"\x02\x01REQ:{file_sender}:{file_receiver}".encode(),0xFF)
         start = time.time()
         while (time.time() - start) < timeout:
             rseq, rpayload = receive_frame(timeout)
@@ -98,6 +169,56 @@ def handshake(file_receiver,timeout=2,retries=3):
     send_frame(b"\x02\x03ACK",0x0)
     return True
 
+def run_file_receive(timeout,file_sender):
+    remote_file = b""
+    start = time.time()
+    while True:
+        if (time.time() - start) > (timeout * 2):
+            print_failed("File receive timeout.")
+            return
+        rseq, rpayload = receive_frame(timeout) # wait till first packet 
+        if rseq is None and rpayload is None:
+            # remote did not respond
+            return
+        if rpayload == b"\x02\x03ACK":
+            print_success("Handshake complete, ready to receive file.")
+            break
+        elif rpayload[:5] == b"\x02\x01REQ":
+            parts = rpayload.decode().split(":")
+            if len(parts) != 3:
+                print_failed("Invalid handshake request")
+                return None
+            msg_command, file_sender_req, file_receiver_req = parts
+            if file_receiver_req != username:
+                continue
+            if file_sender_req != file_sender:
+                continue
+            if file_sender_req == file_sender:
+                # re-send ACK
+                send_frame(b"\x02\x02ACK", seq=rseq)
+                start = time.time()
+                continue
+        elif rpayload[:2] != user_hash:
+            frame_dispatcher(rseq, rpayload, mode="listen")
+            continue
+        elif rpayload[:2] == user_hash:
+            
+            # parts = rpayload.split(b":")
+            # if len(parts) < 4:
+            #     frame_dispatcher(rseq, rpayload, mode="listen")
+            #     continue
+            # elif len(parts) == 4:
+            #     # id_hash = parts[0]
+            #     file_name       = parts[1].decode()
+            #     total_packets   = int(parts[2].decode())
+            #     file_hash       = parts[3]
+            #     break
+            # else:
+            #     frame_dispatcher(rseq, rpayload, mode="listen")
+            #     continue
+    while True:
+         
+        
 # =========== Discover Func ===========
 user_list = []
 def run_discover():
@@ -110,8 +231,16 @@ def background_worker():
     while True:
         if len(work_queue) == 0 or ser.in_waiting > 0:
             # print("[后台进程] 正在运行任务...")
-            receive_frame_with_dispatcher(timeout=0.5)
-            continue
+            bk_seq, bk_payload = receive_frame(timeout=0.5)
+            dispatcher = frame_dispatcher(seq=bk_seq,payload=bk_payload,mode="unlisten")
+            if dispatcher is None:
+                continue
+            # match dispatcher:
+            #     case b"\x02":
+            if dispatcher[0] == b"\x02":
+                file_sender = dispatcher[1:].decode()
+                run_file_receive(timeout=2,file_sender=file_sender) # TODO
+                
         task = work_queue.pop(0)
         # print(f"[后台进程] 处理任务: {task}")
         if task[0] == "message":
@@ -129,7 +258,7 @@ def background_worker():
             recei_hash = hashlib.md5(file_receiver.encode()).digest()[:2]
             run_file_send(file_name=file_name, file_receiver=file_receiver)
         elif task[0] == "discover":
-            run_discover()
+            run_discover() # TODO
             
 
 def foreground_shell():
