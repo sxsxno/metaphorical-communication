@@ -9,8 +9,13 @@ MAX_PAYLOAD = 150  # bytes
 HEADER_FMT = '>IBH'
 HEADER_SIZE = struct.calcsize(HEADER_FMT)
 CHKSUM_SIZE = 4
-
+WINDOWS_SIZE = 15
 # INFRA
+
+###  PROTO
+#  cmdid    (2B)   CMD (3B)                 -> CMD
+#  userhash (2B)   ":" (1B)  payload (nB)   -> packet  
+###
 
 # atomatic build op
 def build_frame(payload: bytes, seq: int):

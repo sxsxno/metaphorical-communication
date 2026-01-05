@@ -92,10 +92,34 @@ def frame_dispatcher(seq, payload, ack_retry:int=1,mode="unlisten"):
     return None
 
 # =========== File Func =============
+
+def send_file_check_if_FIN(packet_, fin_count):
+    for i in range(0, fin_count):
+        if packet_[i] == b'0':
+            print_failed("File receive incomplete, missing packets.")
+            return False
+    return True
+
+def send_file_write_to_file(remote_file_packet):
+    # assemble file
+    remote_file = b""
+    for parts in remote_file_packet[1:-1]: # skip file info and fin
+        remote_file += parts[3:] # skip user hash and ":"
+    # verify file hash
+    parts = remote_file_packet[0].split(b":")
+    file_name       = parts[0].decode()
+    total_packets   = int(parts[1].decode())
+    file_hash       = parts[2]
+    calc_hash = hashlib.md5(remote_file).hexdigest().encode()
+    if calc_hash != file_hash:
+        print_failed("File hash mismatch, transfer failed.")
+        return
+    with open(f"recv_{file_name}", "wb") as f:
+        f.write(remote_file)
+    print_success(f"File {file_name} received successfully.")
+    return
+
 def run_file_send(file_name, file_receiver):
-    ### CONFIG
-    WINDOW_SIZE = 15
-    ###
     recv_hash = hashlib.md5(file_receiver.encode()).digest()[:2]
     if not handshake(file_receiver=file_receiver):
         print_failed(f"Handshake with {file_receiver} failed.")
@@ -105,28 +129,37 @@ def run_file_send(file_name, file_receiver):
         file_data = f.read()
     per_chunk_size = MAX_PAYLOAD - 3
     total_packets = len(file_data) // per_chunk_size
+    # align total packets
     if total_packets * per_chunk_size < len(file_data):
         total_packets += 1
+    
+    total_packets += 2 # file info and fin  
     # send file info first
     file_hash = hashlib.md5(file_data).hexdigest().encode()
     # set up packet
-    packet = [0]*(total_packets+1)
+    packet = [b'0']*(total_packets)
+    # 0 for file info
     packet[0] = recv_hash + f"{file_name}:{total_packets}:".encode() + file_hash
-    for i in range(total_packets):
+    for i in range(total_packets-1): # -1 for fin
         id = i + 1
         chunk = file_data[i*per_chunk_size:(i+1)*per_chunk_size]
         packet[id] = recv_hash + b":" + chunk
+    packet[total_packets-1] = recv_hash + b"\x02\x05FIN"
     stage_count = 0
     ack_count = 0
+    timeout_count = 0
     # windows send  
     while True:
-        if ack_count == total_packets:
-        for i in range(ack_count, min(ack_count + WINDOW_SIZE, total_packets + 1, 0xff)):
+        for i in range(ack_count, min(ack_count + WINDOWS_SIZE, total_packets - (stage_count * 0x100), 0xff)):
             packet_id = i + stage_count * 256
             send_frame(packet[packet_id], seq=packet_id % 256)
             print_log(f"Sent packet {packet_id}/{total_packets} to {file_receiver}")
-        rseq, rpayload = receive_frame(timeout=2)
+        rseq, rpayload = receive_frame(timeout=3)
         if rpayload is None:
+            timeout_count += 1
+            if timeout_count >= 5:
+                print_failed("File send timeout.")
+                return
             print_failed("Timeout waiting for ACK, resending window.")
             continue
         if rpayload[:2] != user_hash:
@@ -136,7 +169,13 @@ def run_file_send(file_name, file_receiver):
             content = rpayload[2:]
             if content[:5] == b"\x02\x04ACK":
                 if rseq == content[6]:
-                    ack_count = rseq
+                    ### TO check if it works
+                    if rseq == 0x00 and ack_count >= 0x30: # in case 0xff ack didnt receive
+                        stage_count += 1
+                        ack_count = 0
+                    ### 
+                    else:
+                        ack_count = rseq
                     if rseq == 0xff:
                         stage_count += 1
                         ack_count = 0
@@ -170,54 +209,94 @@ def handshake(file_receiver,timeout=2,retries=3):
     return True
 
 def run_file_receive(timeout,file_sender):
-    remote_file = b""
-    start = time.time()
+    fin_count = -1
+    ack_count = 0
+    timeout_count = 0
+    remote_file_packet = []
+    windows_packet = [b'0'] *  0x100
     while True:
-        if (time.time() - start) > (timeout * 2):
-            print_failed("File receive timeout.")
-            return
-        rseq, rpayload = receive_frame(timeout) # wait till first packet 
-        if rseq is None and rpayload is None:
-            # remote did not respond
-            return
-        if rpayload == b"\x02\x03ACK":
-            print_success("Handshake complete, ready to receive file.")
-            break
-        elif rpayload[:5] == b"\x02\x01REQ":
-            parts = rpayload.decode().split(":")
-            if len(parts) != 3:
-                print_failed("Invalid handshake request")
-                return None
-            msg_command, file_sender_req, file_receiver_req = parts
-            if file_receiver_req != username:
+        # start = time.time()
+        for i in range(0, WINDOWS_SIZE):
+            rseq, rpayload = receive_frame(timeout) # wait till first packet 
+            if rseq is None and rpayload is None:
+                # remote did not respond
+                timeout_count += 1
+                if timeout_count >= 5:
+                    print_failed("File receive timeout.")
+                    return
                 continue
-            if file_sender_req != file_sender:
+            if rpayload == b"\x02\x03ACK":
+                print_success("Handshake complete, ready to receive file.")
                 continue
-            if file_sender_req == file_sender:
-                # re-send ACK
-                send_frame(b"\x02\x02ACK", seq=rseq)
-                start = time.time()
+            elif rpayload[:5] == b"\x02\x01REQ":
+                parts = rpayload.decode().split(":")
+                if len(parts) != 3:
+                    print_failed("Invalid handshake request")
+                    return None
+                msg_command, file_sender_req, file_receiver_req = parts
+                if file_receiver_req != username:
+                    continue
+                if file_sender_req != file_sender:
+                    continue
+                if file_sender_req == file_sender:
+                    # re-send ACK
+                    send_frame(b"\x02\x02ACK", seq=rseq)
+                    start = time.time()
+                    continue
+            elif rpayload[2:7] == b"\x02\x05FIN" and rpayload[:2] == user_hash:
+                fin_count = rseq
+                # check if complete
+                if send_file_check_if_FIN(windows_packet, fin_count):
+                    remote_file_packet += windows_packet
+                    send_file_write_to_file(remote_file_packet)
+                    return
+                else:
+                    continue
+
+            elif rpayload[:2] != user_hash:
+                frame_dispatcher(rseq, rpayload, mode="listen")
                 continue
-        elif rpayload[:2] != user_hash:
-            frame_dispatcher(rseq, rpayload, mode="listen")
-            continue
-        elif rpayload[:2] == user_hash:
-            
-            # parts = rpayload.split(b":")
-            # if len(parts) < 4:
-            #     frame_dispatcher(rseq, rpayload, mode="listen")
-            #     continue
-            # elif len(parts) == 4:
-            #     # id_hash = parts[0]
-            #     file_name       = parts[1].decode()
-            #     total_packets   = int(parts[2].decode())
-            #     file_hash       = parts[3]
-            #     break
-            # else:
-            #     frame_dispatcher(rseq, rpayload, mode="listen")
-            #     continue
-    while True:
-         
+            elif rpayload[:2] == user_hash:
+                if rpayload[3] != b':':
+                    frame_dispatcher(rseq, rpayload, mode="listen")
+                else:
+                    if rseq >= ack_count + WINDOWS_SIZE or rseq < ack_count:
+                        # out of window
+                        continue
+                    packet_content = rpayload[3:]
+                    windows_packet[rseq] = packet_content
+                    print_log(f"Received packet {rseq} from {file_sender}")
+                    if fin_count != -1: # fin received should check if complete
+                        if send_file_check_if_FIN(windows_packet, fin_count):
+                            remote_file_packet += windows_packet
+                            send_file_write_to_file(remote_file_packet)
+                            return
+                        else:
+                            continue
+        for i in range(0, len(windows_packet)):
+            if windows_packet[i] == b'0':
+                break
+            else:
+                ack_count = i
+        send_frame(user_hash + b"\x02\x04ACK:" + bytes([ack_count]), seq=ack_count)
+        if ack_count == 0xff:
+            ack_count = 0
+            remote_file_packet += windows_packet
+            windows_packet = [b'0'] *  0x100
+                # parts = rpayload.split(b":")
+                # if len(parts) < 4:
+                #     frame_dispatcher(rseq, rpayload, mode="listen")
+                #     continue
+                # elif len(parts) == 4:
+                #     # id_hash = parts[0]
+                #     file_name       = parts[1].decode()
+                #     total_packets   = int(parts[2].decode())
+                #     file_hash       = parts[3]
+                #     break
+                # else:
+                #     frame_dispatcher(rseq, rpayload, mode="listen")
+                #     continue
+
         
 # =========== Discover Func ===========
 user_list = []
@@ -239,7 +318,7 @@ def background_worker():
             #     case b"\x02":
             if dispatcher[0] == b"\x02":
                 file_sender = dispatcher[1:].decode()
-                run_file_receive(timeout=2,file_sender=file_sender) # TODO
+                run_file_receive(timeout=3,file_sender=file_sender) # TODO
                 
         task = work_queue.pop(0)
         # print(f"[后台进程] 处理任务: {task}")
