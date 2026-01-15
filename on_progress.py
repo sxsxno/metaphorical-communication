@@ -79,10 +79,10 @@ def frame_dispatcher(seq, payload, ack_retry:int=1,mode="unlisten"):
         send_frame(f"\x02\x02ACK".encode(), seq)
         return f"\x02{file_sender}"
     else:                                # normal message
-        if last_message == payload: # TODO
-            print("[-] repeat Message")
-        else:
-            print("[+] data received:", payload)
+        # if last_message == payload: # TODO
+        #     print("[-] repeat Message")
+        # else:
+        print("[+] data received:", payload)
         # send ACK back
         for _ in range(ack_retry):  # repeat N times , but OT is enough in practice
             send_frame(b"\x01\x01ACK", seq)
@@ -319,11 +319,13 @@ def background_worker():
             if dispatcher[0] == b"\x02":
                 file_sender = dispatcher[1:].decode()
                 run_file_receive(timeout=3,file_sender=file_sender) # TODO
-                
+            time.sleep(0.3)
+            continue
         task = work_queue.pop(0)
+        # print(task)
         # print(f"[后台进程] 处理任务: {task}")
         if task[0] == "message":
-            res = send_frame_with_ack(payload=task.encode(),seq=message_seq_num,timeout=2)
+            res = send_frame_with_ack(payload=task[1].encode(),seq=message_seq_num,timeout=2)
             if res == 1:
                 print_success(task)
             else:
