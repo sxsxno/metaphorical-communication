@@ -1,6 +1,7 @@
 import struct
 import time
 import zlib
+import logging
 # PROTO CONFIG
 # 4-byte magic number
 MAGIC_BYTES = b'\xFF\xC0\xFF\xEE'
@@ -16,6 +17,17 @@ WINDOWS_SIZE = 15
 #  cmdid    (2B)   CMD (3B)                 -> CMD
 #  userhash (2B)   ":" (1B)  payload (nB)   -> packet  
 ###
+
+### init
+ser = None
+logger = None
+def init_serial(serial_obj):
+    global ser
+    ser = serial_obj
+
+def init_logger(logger_obj):
+    global logger
+    logger = logger_obj
 
 # atomatic build op
 def build_frame(payload: bytes, seq: int):
@@ -57,8 +69,7 @@ def read_exact(size: int, deadline: int) -> bytes:
         buf.extend(chunk)
     return bytes(buf)
 
-def receive_frame(seq: int, deadline):
-    global logging
+def receive_frame(deadline):
     global logger
     logging.info(f"enter receiving mode")
     data = bytearray()

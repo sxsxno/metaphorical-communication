@@ -8,8 +8,8 @@ import logging
 import hashlib
 import argparse
 # my package
-from .infra import *
-from . import UI
+from infra import *
+import UI
 
 logger = logging.getLogger('my_logger')
 logger.propagate = False
@@ -36,7 +36,7 @@ def send_frame_with_ack(payload: bytes, seq: int, retries=2, timeout=2):
         send_frame(payload, seq)
         start = time.time()
         while (time.time() - start) < timeout:
-            rseq, rpayload = receive_frame(timeout)
+            rseq, rpayload = receive_frame(deadline=timeout)
             if rpayload == b"\x01\x01ACK" and rseq == seq:
                 logger.info("ACK received")
                 
@@ -154,7 +154,7 @@ def run_file_send(file_name, file_receiver):
             packet_id = i + stage_count * 256
             send_frame(packet[packet_id], seq=packet_id % 256)
             print_log(f"Sent packet {packet_id}/{total_packets} to {file_receiver}")
-        rseq, rpayload = receive_frame(timeout=3)
+        rseq, rpayload = receive_frame(deadline=3)
         if rpayload is None:
             timeout_count += 1
             if timeout_count >= 5:
@@ -196,7 +196,7 @@ def handshake(file_receiver,timeout=2,retries=3):
         send_frame(f"\x02\x01REQ:{file_sender}:{file_receiver}".encode(),0xFF)
         start = time.time()
         while (time.time() - start) < timeout:
-            rseq, rpayload = receive_frame(timeout)
+            rseq, rpayload = receive_frame(deadline=timeout)
             if rpayload == f"\x02\x02ACK:{username}:{file_receiver}".encode() and rseq == 0xFF:
                 # logger.info("ACK received")
                 stage_flag = 1
@@ -217,7 +217,7 @@ def run_file_receive(timeout,file_sender):
     while True:
         # start = time.time()
         for i in range(0, WINDOWS_SIZE):
-            rseq, rpayload = receive_frame(timeout) # wait till first packet 
+            rseq, rpayload = receive_frame(deadline=timeout) # wait till first packet 
             if rseq is None and rpayload is None:
                 # remote did not respond
                 timeout_count += 1
@@ -310,7 +310,7 @@ def background_worker():
     while True:
         if len(work_queue) == 0 or ser.in_waiting > 0:
             # print("[后台进程] 正在运行任务...")
-            bk_seq, bk_payload = receive_frame(timeout=0.5)
+            bk_seq, bk_payload = receive_frame(deadline=0.5)
             dispatcher = frame_dispatcher(seq=bk_seq,payload=bk_payload,mode="unlisten")
             if dispatcher is None:
                 continue
@@ -348,7 +348,7 @@ def foreground_shell():
         # cmd = cmd.split(" ")
         if cmd.startswith("message"):
             if len(cmd) < 6:
-                print("Usage: send <message>")
+                print("Usage: message <message>")
                 continue
             # send_frame(payload=cmd[1].encode(),seq=0)
             work_queue.append(("message",cmd[7:]))
@@ -367,9 +367,11 @@ def main():
     global ser
     # no global declaration needed here.argv[1]
     ser = serial.Serial(port, 9600, timeout=1)
+    init_serial(ser)
+    init_logger(logger)
     p = Thread(target=background_worker, daemon=True)
     p.start()
-
     foreground_shell()
+
 # TODO add limit about MAXPAYLOAD
 main()

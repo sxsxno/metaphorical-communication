@@ -159,10 +159,10 @@ app = Application(
     full_screen=True,
 )
 
-threading.Thread(
-    target=background_log,
-    args=(app,),
-    daemon=True,
-).start()
+# threading.Thread(
+#     target=background_log,
+#     args=(app,),
+#     daemon=True,
+# ).start()
 
-app.run()
+# app.run()
