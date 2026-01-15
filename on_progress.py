@@ -9,7 +9,7 @@ import hashlib
 import argparse
 # my package
 from infra import *
-import UI
+# import UI
 
 logger = logging.getLogger('my_logger')
 logger.propagate = False
@@ -76,8 +76,10 @@ def frame_dispatcher(seq, payload, ack_retry:int=1,mode="unlisten"):
             return None
         print_log(f"Handshake request from {file_sender}")
         # send ACK back
-        send_frame(f"\x02\x02ACK".encode(), seq)
-        return f"\x02{file_sender}"
+        time.sleep(1) # add lag by hand
+        send_frame(f"\x02\x02ACK:{file_sender}:{username}".encode(), seq)
+        print("send ACK back")
+        return f"\x02{file_sender}".encode()
     else:                                # normal message
         # if last_message == payload: # TODO
         #     print("[-] repeat Message")
@@ -139,7 +141,7 @@ def run_file_send(file_name, file_receiver):
     # set up packet
     packet = [b'0']*(total_packets)
     # 0 for file info
-    packet[0] = recv_hash + f"{file_name}:{total_packets}:".encode() + file_hash
+    packet[0] = recv_hash + f":{file_name}:{total_packets}:".encode() + file_hash
     for i in range(total_packets-1): # -1 for fin
         id = i + 1
         chunk = file_data[i*per_chunk_size:(i+1)*per_chunk_size]
@@ -189,7 +191,7 @@ def run_file_send(file_name, file_receiver):
             
         
         
-def handshake(file_receiver,timeout=2,retries=3):
+def handshake(file_receiver,timeout=8,retries=3):
     stage_flag = 0
     for _ in range(retries):
         file_sender = username
@@ -214,6 +216,7 @@ def run_file_receive(timeout,file_sender):
     timeout_count = 0
     remote_file_packet = []
     windows_packet = [b'0'] *  0x100
+    print("enter file receive mode")
     while True:
         # start = time.time()
         for i in range(0, WINDOWS_SIZE):
@@ -240,7 +243,7 @@ def run_file_receive(timeout,file_sender):
                     continue
                 if file_sender_req == file_sender:
                     # re-send ACK
-                    send_frame(b"\x02\x02ACK", seq=rseq)
+                    send_frame(f"\x02\x02ACK:{file_sender}:{username}".encode(), seq=rseq)
                     start = time.time()
                     continue
             elif rpayload[2:7] == b"\x02\x05FIN" and rpayload[:2] == user_hash:
@@ -314,11 +317,12 @@ def background_worker():
             dispatcher = frame_dispatcher(seq=bk_seq,payload=bk_payload,mode="unlisten")
             if dispatcher is None:
                 continue
+            print(dispatcher,"Stage 1")
             # match dispatcher:
             #     case b"\x02":
-            if dispatcher[0] == b"\x02":
+            if dispatcher.startswith(b"\x02"):
                 file_sender = dispatcher[1:].decode()
-                run_file_receive(timeout=3,file_sender=file_sender) # TODO
+                run_file_receive(timeout=8,file_sender=file_sender) # TODO
             time.sleep(0.3)
             continue
         task = work_queue.pop(0)
