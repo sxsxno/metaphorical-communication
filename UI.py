@@ -97,7 +97,7 @@ root_container = HSplit(
 
 layout = Layout(root_container, focused_element=input_panel.children[1])
 
-# ========= Buffer API =========
+# ========= Out API =========
 def print_log(text: str):
     log_append_line(text)
     
@@ -120,13 +120,19 @@ def get_input_text() -> str:
 def clear_input_text():
     input_buffer.text = ""
 
+def set_enter_handler(handler):
+    global kb_enter_handler
+    kb_enter_handler = handler
+
 # ========= Key Bindings =========
 kb = KeyBindings()
 kb_enter_handler = None
 @kb.add("enter")
 def _(event):
-    if kb_enter_handler:
+    # print(kb_enter_handler)
+    if kb_enter_handler is not None:
         input_text = get_input_text()
+        clear_input_text()
         kb_enter_handler(input_text)
 
 
@@ -157,15 +163,6 @@ def _(event):
 #         return
 
 
-# ========= Background Thread =========
-def background_log(app):
-    i = 0
-    while True:
-        time.sleep(1)
-        log_buffer.text += f"\n[LOG] tick {i}"
-        log_buffer.cursor_position = len(log_buffer.text)
-        i += 1
-        app.invalidate()
 
 # ========= App =========
 style = Style.from_dict({

@@ -45,13 +45,12 @@ def send_frame_with_ack(payload: bytes, seq: int, retries=2, timeout=2):
         while (time.time() - start) < timeout:
             rseq, rpayload = receive_frame(deadline=timeout)
             if rpayload == b"\x01\x01ACK" and rseq == seq:
-                logger.info("ACK received")
-                
+                # logger.info("ACK received")
                 message_seq_num += 1  # 切换 seq
                 message_seq_num %= 256
                 return True
         # 超时重试
-    logger.warning("send failed after retries")
+    # print_failed("send failed after retries")
     return False
 
 last_message =  ""
@@ -92,7 +91,7 @@ def frame_dispatcher(seq, payload, ack_retry:int=1,mode="unlisten"):
         # if last_message == payload: # TODO
         #     print("[-] repeat Message")
         # else:
-        print_log("[+] data received:", payload)
+        print_log(f"[+] data received: {payload}")
         print_commu(payload.decode())
         # send ACK back
         for _ in range(ack_retry):  # repeat N times , but OT is enough in practice
@@ -325,12 +324,12 @@ work_queue = []
 def background_worker():
     while True:
         if len(work_queue) == 0 or ser.in_waiting > 0:
-            # print("[后台进程] 正在运行任务...")
+            # print_log("backend Started")
             bk_seq, bk_payload = receive_frame(deadline=0.5)
             dispatcher = frame_dispatcher(seq=bk_seq,payload=bk_payload,mode="unlisten")
             if dispatcher is None:
                 continue
-            print_log(dispatcher,"Stage 1")
+            # print_log(dispatcher,"Stage 1")
             # match dispatcher:
             #     case b"\x02":
             if dispatcher.startswith(b"\x02"):
@@ -368,7 +367,7 @@ def cmd_dispatcher(cmd):
             return
         # send_frame(payload=cmd[1].encode(),seq=0)
         work_queue.append(("message",cmd[8:]))
-        print_log(f"message send task added: {cmd[8:]}")
+        print_log(f"message send task added: {cmd[8:].strip()}")
     if cmd.startswith("sendfile"):
         if len(cmd) < 10:
             print_log("Usage: sendfile filename")
@@ -376,7 +375,8 @@ def cmd_dispatcher(cmd):
         cmd_content = cmd_content.split(" ")
         work_queue.append(("sendfile",cmd_content[0],cmd_content[1]))
         print_log(f"message send task added: {cmd_content[0],cmd_content[1]}")
-kb_enter_handler = cmd_dispatcher
+
+set_enter_handler(cmd_dispatcher)
 #  define keyboard enter handler
 
 def main():
@@ -385,11 +385,10 @@ def main():
     ser = serial.Serial(port, 9600, timeout=1)
     init_serial(ser)
     init_logger(logger)
-    
-    app.run()
-    
     p = Thread(target=background_worker, daemon=True)
     p.start()
+    
+    app.run()
     # foreground_shell()
 
 # TODO add limit about MAXPAYLOAD
