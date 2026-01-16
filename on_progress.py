@@ -294,12 +294,11 @@ def main():
         )
         print_success(f"API ready: http://{args.api_host}:{args.api_port} (auth={'on' if api_key else 'off'})")
     try:
-        app.run()
-        # if args.no_shell:
-        #     while True:
-        #         time.sleep(1)
-        # else:
-        #     foreground_shell()
+        if args.no_shell:
+            # Headless mode: block without polling (Ctrl+C will interrupt).
+            stop_event.wait()
+        else:
+            app.run()
     except KeyboardInterrupt:
         pass
     finally:
