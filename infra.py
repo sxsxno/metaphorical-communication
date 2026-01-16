@@ -64,6 +64,7 @@ class Magic_serial:
         length = len(payload)
         frame = self.build_frame(payload, seq, type)
         self.ser.write(frame)
+        print(f"write to serial: {frame}")
         self.logger.debug(f"write to serial: {frame}")
         return len(frame)
 
@@ -79,7 +80,7 @@ class Magic_serial:
             buf.extend(chunk)
         return bytes(buf)
 
-    def receive_frame(self, deadline):
+    def receive_frame(self, deadline=10):
         self.logger.info(f"enter receiving mode")
         data = bytearray()
         magic = bytearray()
@@ -102,7 +103,7 @@ class Magic_serial:
             payload = self.read_exact(length, deadline)
             if len(payload) < length:
                 continue
-            if chksum != zlib.crc32(b'\0'*CHKSUM_SIZE + header[CHKSUM_SIZE:] + payload):
+            if chksum != zlib.crc32(header[:-CHKSUM_SIZE] + b'\0'*CHKSUM_SIZE + payload):
                 self.logger.warning("incorrect checksum")
                 continue
             frame_hash = hashlib.md5(header + payload).hexdigest()
@@ -110,13 +111,13 @@ class Magic_serial:
             return payload, type, seq, length, frame_hash
         return None, None, None, None, frame_hash
     
-    def send_frame_with_ack(self, payload: bytes, seq: int, retries=2, timeout=2):
+    def send_frame_with_ack(self, payload: bytes, retries=2, timeout=2):
         for _ in range(retries):
-            self.send_frame(payload, seq)
+            self.send_frame(payload, self.message_seq_num)
             start = time.time()
             while (time.time() - start) < timeout:
                 _, rtype, rseq, _, _ = self.receive_frame(deadline=timeout)
-                if rtype == b"\x01" and rseq == seq:
+                if rtype == b"\x01" and rseq == self.message_seq_num:
                     self.logger.info("ACK received")
                     
                     self.message_seq_num = (self.message_seq_num + 1 ) % 256
