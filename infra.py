@@ -137,7 +137,7 @@ class Magic_serial:
         
         if frame_hash == None:
             return None
-        if type == b"\x01": 
+        if type == TYPE_ACK: 
             # repated ACK
             return None
         else: 
@@ -151,6 +151,7 @@ class Magic_serial:
             if frame_hash in self.has_received_hash:
                 self.logger.info("duplicate message received, ignored")
                 return None
+            self.has_received_hash.add(frame_hash)
             return payload
     
     # last_message =  ""

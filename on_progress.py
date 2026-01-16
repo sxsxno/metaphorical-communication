@@ -101,18 +101,25 @@ def _events_after(after_id: int) -> list[dict]:
 
 message_seq_num = 0
 def background_worker(ser: Magic_serial):
+    global message_seq_num
     while True:
         if stop_event.is_set():
             return
         # 优先处理串口输入（避免阻塞 API 请求线程）
         if ser.is_waiting() > 0:
             # print("[后台进程] 正在运行任务...")
-            bk_seq, bk_payload = ser.receive_frame(deadline=0.5)
-            dispatcher = ser.frame_dispatcher(seq=bk_seq,payload=bk_payload,mode="unlisten")
+            payload, rtype, rseq, length, frame_hash = ser.receive_frame(deadline=0.5)
+            dispatcher = ser.frame_dispatcher(payload, rtype, rseq, length, frame_hash)
             if dispatcher is None:
                 continue
             print_log(f'recieved {dispatcher}')
             print_commu(dispatcher)
+            # 同步到 API client（SSE 广播）
+            try:
+                text = dispatcher.decode("utf-8", errors="replace")
+            except Exception:
+                text = None
+            _event_add("message.recv", {"text": text, "payload_hex": dispatcher.hex() if isinstance(dispatcher, (bytes, bytearray)) else None})
             # if dispatcher.startswith(b"\x02"):
             #     file_sender = dispatcher[1:].decode()
             #     run_file_receive(timeout=8,file_sender=file_sender) # TODO
@@ -134,15 +141,15 @@ def background_worker(ser: Magic_serial):
                 text = task["payload"]["text"]
                 sender = task["payload"].get("from") or username
                 via = task["payload"].get("via") or "local"
-                res = ser.send_frame_with_ack(payload=text.encode(),seq=message_seq_num,timeout=2)
+                # Magic_serial 内部维护 seq；这里不要传 seq，否则会直接抛异常导致“client 发不出去”
+                res = ser.send_frame_with_ack(payload=text.encode(), timeout=2)
+                message_seq_num = ser.message_seq_num
                 if res:
                     print_success(task)
                     _task_update(task_id, status="completed", result={"ok": True})
                 else:
                     print_failed(task)
                     _task_update(task_id, status="failed", result={"ok": False})
-                message_seq_num += 1
-                message_seq_num = message_seq_num & 0xff
                 _event_add("chat.message", {"from": sender, "text": text, "via": via, "ok": bool(res)})
             # elif task["kind"] == "sendfile":
             #     file_name = task["payload"]["file_path"]
