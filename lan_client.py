@@ -69,8 +69,8 @@ def _format_event(evt, self_name):
         sender = data.get("from") or "?"
         text = data.get("text") or ""
         if sender == self_name:
-            return f"[you] {text}"
-        return f"[{sender}] {text}"
+            return f"{text}"
+        return f"{text}"
     if et == "chat.join":
         u = data.get("username") or "?"
         return f"* {u} joined"
@@ -80,9 +80,9 @@ def _format_event(evt, self_name):
     if et == "message.recv":
         text = data.get("text")
         if text:
-            return f"[SERIAL] {text}"
+            return f"{text}"
         hx = data.get("payload_hex") or ""
-        return f"[SERIAL] hex={hx}"
+        return f"hex={hx}"
     return None
 
 

@@ -140,6 +140,7 @@ def background_worker(ser: Magic_serial):
             if task["kind"] == "message":
                 text = task["payload"]["text"]
                 sender = task["payload"].get("from") or username
+                text = f"[{sender}] {text}"
                 via = task["payload"].get("via") or "local"
                 # Magic_serial 内部维护 seq；这里不要传 seq，否则会直接抛异常导致“client 发不出去”
                 res = ser.send_frame_with_ack(payload=text.encode(), timeout=2)
