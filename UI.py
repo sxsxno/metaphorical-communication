@@ -98,14 +98,16 @@ root_container = HSplit(
 layout = Layout(root_container, focused_element=input_panel.children[1])
 
 # ========= Out API =========
-def print_log(text: str):
+def print_log_in_UI(text: str):
     log_append_line(text)
     
-def print_commu(text: str):
+def print_commu_in_UI(text: str):
     commu_append_line(text)
-def print_success(text: str):
+    
+def print_success_in_UI(text: str):
     log_append_line(f"[+] {text}")
-def print_failed(text: str):
+    
+def print_failed_in_UI(text: str):
     log_append_line(f"[-] {text}")
 
 def log_append_line(text: str):

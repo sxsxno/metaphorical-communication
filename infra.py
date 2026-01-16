@@ -52,6 +52,9 @@ class Magic_serial:
         self.has_received_hash = set()
         self.username = username
 
+    def is_waiting(self):
+        return self.ser.in_waiting
+
     # atomatic build op
     def build_frame(self, payload: bytes, seq: int, type: int = 0):
         length = len(payload)

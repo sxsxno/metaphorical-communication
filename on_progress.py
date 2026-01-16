@@ -99,32 +99,13 @@ def _events_after(after_id: int) -> list[dict]:
             return list(_events)
         return [e for e in _events if e["id"] > after_id]
 
-
-logger = logging.getLogger("my_logger")
-logger.propagate = False
-logger.setLevel(logging.DEBUG)
-
-logging.getLogger().setLevel(logging.ERROR)
-
-parser = argparse.ArgumentParser(description="Sync Unit")
-parser.add_argument("--port", "-P", type=str, help="port name", required=True)
-parser.add_argument("--name", "-N", type=str, help="User name", required=True)
-args = parser.parse_args()
-
-port = args.port
-username = args.name
-user_hash = hashlib.md5(username.encode()).digest()[:2]
-async_time = 5
-# ser = 
-
-
 message_seq_num = 0
 def background_worker(ser: Magic_serial):
     while True:
         if stop_event.is_set():
             return
         # 优先处理串口输入（避免阻塞 API 请求线程）
-        if ser.in_waiting > 0:
+        if ser.is_waiting() > 0:
             # print("[后台进程] 正在运行任务...")
             bk_seq, bk_payload = ser.receive_frame(deadline=0.5)
             dispatcher = ser.frame_dispatcher(seq=bk_seq,payload=bk_payload,mode="unlisten")
@@ -198,43 +179,43 @@ def foreground_shell(cmd):
         # send_frame(payload=cmd[1].encode(),seq=0)
         task_id = _task_put("message", {"text": cmd[8:]})
         print(f"message send task added: {cmd[8:]} (task_id={task_id})")
-    if cmd.startswith("sendfile"):
-        if len(cmd) < 10:
-            print("Usage: sendfile filename")
-        cmd_content = cmd[9:]
-        cmd_content = cmd_content.split(" ")
+    # if cmd.startswith("sendfile"):
+    #     if len(cmd) < 10:
+    #         print("Usage: sendfile filename")
+    #     cmd_content = cmd[9:]
+    #     cmd_content = cmd_content.split(" ")
 
-        task_id = _task_put("sendfile", {"file_path": cmd_content[0], "receiver": cmd_content[1]})
-        print(f"sendfile task added: {cmd_content[0],cmd_content[1]} (task_id={task_id})")
+    #     task_id = _task_put("sendfile", {"file_path": cmd_content[0], "receiver": cmd_content[1]})
+    #     print(f"sendfile task added: {cmd_content[0],cmd_content[1]} (task_id={task_id})")
 set_enter_handler(foreground_shell)
 
-def cmd_dispatcher(cmd):
-    if cmd in ("exit", "quit"):
-        return
-    # cmd = cmd.split(" ")
-    if cmd.startswith("message"):
-        if len(cmd) < 6:
-            print_log("Usage: message <message>")
-            return
-        # send_frame(payload=cmd[1].encode(),seq=0)
-        work_queue.append(("message",cmd[8:]))
-        print_log(f"message send task added: {cmd[8:].strip()}")
-    if cmd.startswith("sendfile"):
-        if len(cmd) < 10:
-            print_log("Usage: sendfile filename")
-        cmd_content = cmd[9:]
-        cmd_content = cmd_content.split(" ")
-        work_queue.append(("sendfile",cmd_content[0],cmd_content[1]))
-        print_log(f"message send task added: {cmd_content[0],cmd_content[1]}")
+# def cmd_dispatcher(cmd):
+#     if cmd in ("exit", "quit"):
+#         return
+#     # cmd = cmd.split(" ")
+#     if cmd.startswith("message"):
+#         if len(cmd) < 6:
+#             print_log("Usage: message <message>")
+#             return
+#         # send_frame(payload=cmd[1].encode(),seq=0)
+#         work_queue.append(("message",cmd[8:]))
+#         print_log(f"message send task added: {cmd[8:].strip()}")
+#     if cmd.startswith("sendfile"):
+#         if len(cmd) < 10:
+#             print_log("Usage: sendfile filename")
+#         cmd_content = cmd[9:]
+#         cmd_content = cmd_content.split(" ")
+#         work_queue.append(("sendfile",cmd_content[0],cmd_content[1]))
+#         print_log(f"message send task added: {cmd_content[0],cmd_content[1]}")
 
-set_enter_handler(cmd_dispatcher)
+# set_enter_handler(cmd_dispatcher)
 #  define keyboard enter handler
 
 def _parse_args():
     parser = argparse.ArgumentParser(description="Sync Unit")
     parser.add_argument("--port", "-P", type=str, help="port name", required=True)
     parser.add_argument("--name", "-N", type=str, help="User name", required=True)
-
+    # print(1)
     parser.add_argument("--api-enable", action="store_true", help="Expose HTTP API for LAN clients")
     parser.add_argument("--api-host", type=str, default="0.0.0.0", help="API bind host (use 0.0.0.0 for LAN)")
     parser.add_argument("--api-port", type=int, default=8000, help="API bind port")
@@ -243,9 +224,21 @@ def _parse_args():
 
     return parser.parse_args()
 
+def print_success(text):
+    print(f"[+] {text}")
+
+def print_log(text):
+    print(f"[=] {text}")
+
+def print_failed(text):
+    print(f"[-] {text}")
+
+def print_commu(text):
+    print(f"[+] {text}")
+
 def main():
     global port, username, user_hash, api_key, _uploads_dir
-
+    
     args = _parse_args()
     port = args.port
     username = args.name
@@ -259,7 +252,7 @@ def main():
     ser = Magic_serial(port=port,bitrate=9600,timeout=3)
     # foreground_shell()
     _uploads_dir = tempfile.mkdtemp(prefix="on_progress_uploads_")
-    p = Thread(target=background_worker, args=(ser), daemon=True)
+    p = Thread(target=background_worker, args=(ser,), daemon=True)
     p.start()
 
     httpd = None
