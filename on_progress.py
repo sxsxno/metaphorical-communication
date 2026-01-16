@@ -557,8 +557,8 @@ def main():
 
     try:
         if args.no_shell:
-            while True:
-                time.sleep(1)
+            # Headless mode: block without polling (Ctrl+C will interrupt).
+            stop_event.wait()
         else:
             foreground_shell()
     except KeyboardInterrupt:
