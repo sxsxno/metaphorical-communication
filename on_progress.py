@@ -9,7 +9,7 @@ import hashlib
 import argparse
 # my package
 from infra import *
-# import UI
+from UI import *
 
 logger = logging.getLogger('my_logger')
 logger.propagate = False
@@ -28,6 +28,13 @@ user_hash = hashlib.md5(username.encode()).digest()[:2]
 async_time = 5
 # ser = 
 
+# TODO
+# class core:
+#     def __init__(self):
+#         self.s
+#     def send():
+        
+
 # ========= Message Func ===========
 message_seq_num = 0  # Stop-and-Wait seq
 def send_frame_with_ack(payload: bytes, seq: int, retries=2, timeout=2):
@@ -40,7 +47,8 @@ def send_frame_with_ack(payload: bytes, seq: int, retries=2, timeout=2):
             if rpayload == b"\x01\x01ACK" and rseq == seq:
                 logger.info("ACK received")
                 
-                message_seq_num ^= 1  # 切换 seq
+                message_seq_num += 1  # 切换 seq
+                message_seq_num %= 256
                 return True
         # 超时重试
     logger.warning("send failed after retries")
@@ -78,13 +86,14 @@ def frame_dispatcher(seq, payload, ack_retry:int=1,mode="unlisten"):
         # send ACK back
         time.sleep(1) # add lag by hand
         send_frame(f"\x02\x02ACK:{file_sender}:{username}".encode(), seq)
-        print("send ACK back")
+        print_log("send ACK back")
         return f"\x02{file_sender}".encode()
     else:                                # normal message
         # if last_message == payload: # TODO
         #     print("[-] repeat Message")
         # else:
-        print("[+] data received:", payload)
+        print_log("[+] data received:", payload)
+        print_commu(payload.decode())
         # send ACK back
         for _ in range(ack_retry):  # repeat N times , but OT is enough in practice
             send_frame(b"\x01\x01ACK", seq)
@@ -214,13 +223,15 @@ def run_file_receive(timeout,file_sender):
     fin_count = -1
     ack_count = 0
     timeout_count = 0
+    file_sender_hash = hashlib.md5(file_sender.encode()).digest()[:2]
     remote_file_packet = []
     windows_packet = [b'0'] *  0x100
-    print("enter file receive mode")
+    print_log("enter file receive mode")
     while True:
         # start = time.time()
         for i in range(0, WINDOWS_SIZE):
             rseq, rpayload = receive_frame(deadline=timeout) # wait till first packet 
+            # print(rpayload[:2], user_hash)
             if rseq is None and rpayload is None:
                 # remote did not respond
                 timeout_count += 1
@@ -261,8 +272,10 @@ def run_file_receive(timeout,file_sender):
                 continue
             elif rpayload[:2] == user_hash:
                 if rpayload[3] != b':':
+                    print_log("Stage 3")
                     frame_dispatcher(rseq, rpayload, mode="listen")
                 else:
+                    print_log("Stage 2")
                     if rseq >= ack_count + WINDOWS_SIZE or rseq < ack_count:
                         # out of window
                         continue
@@ -281,7 +294,7 @@ def run_file_receive(timeout,file_sender):
                 break
             else:
                 ack_count = i
-        send_frame(user_hash + b"\x02\x04ACK:" + bytes([ack_count]), seq=ack_count)
+        send_frame(file_sender_hash + b"\x02\x04ACK:" + bytes([ack_count]), seq=ack_count)
         if ack_count == 0xff:
             ack_count = 0
             remote_file_packet += windows_packet
@@ -317,7 +330,7 @@ def background_worker():
             dispatcher = frame_dispatcher(seq=bk_seq,payload=bk_payload,mode="unlisten")
             if dispatcher is None:
                 continue
-            print(dispatcher,"Stage 1")
+            print_log(dispatcher,"Stage 1")
             # match dispatcher:
             #     case b"\x02":
             if dispatcher.startswith(b"\x02"):
@@ -344,30 +357,27 @@ def background_worker():
             run_file_send(file_name=file_name, file_receiver=file_receiver)
         elif task[0] == "discover":
             run_discover() # TODO
-            
-
-def foreground_shell():
-    while True:
-        cmd = input("\nshell> ")
-        if cmd in ("exit", "quit"):
-            break
-        # cmd = cmd.split(" ")
-        if cmd.startswith("message"):
-            if len(cmd) < 6:
-                print("Usage: message <message>")
-                continue
-            # send_frame(payload=cmd[1].encode(),seq=0)
-            work_queue.append(("message",cmd[7:]))
-            print(f"message send task added: {cmd[7:]}")
-        if cmd.startswith("sendfile"):
-            if len(cmd) < 10:
-                print("Usage: sendfile filename")
-            cmd_content = cmd[9:]
-            cmd_content = cmd_content.split(" ")
-
-            work_queue.append(("sendfile",cmd_content[0],cmd_content[1]))
-            print(f"message send task added: {cmd_content[0],cmd_content[1]}")
     
+def cmd_dispatcher(cmd):
+    if cmd in ("exit", "quit"):
+        return
+    # cmd = cmd.split(" ")
+    if cmd.startswith("message"):
+        if len(cmd) < 6:
+            print_log("Usage: message <message>")
+            return
+        # send_frame(payload=cmd[1].encode(),seq=0)
+        work_queue.append(("message",cmd[8:]))
+        print_log(f"message send task added: {cmd[8:]}")
+    if cmd.startswith("sendfile"):
+        if len(cmd) < 10:
+            print_log("Usage: sendfile filename")
+        cmd_content = cmd[9:]
+        cmd_content = cmd_content.split(" ")
+        work_queue.append(("sendfile",cmd_content[0],cmd_content[1]))
+        print_log(f"message send task added: {cmd_content[0],cmd_content[1]}")
+kb_enter_handler = cmd_dispatcher
+#  define keyboard enter handler
 
 def main():
     global ser
@@ -375,9 +385,12 @@ def main():
     ser = serial.Serial(port, 9600, timeout=1)
     init_serial(ser)
     init_logger(logger)
+    
+    app.run()
+    
     p = Thread(target=background_worker, daemon=True)
     p.start()
-    foreground_shell()
+    # foreground_shell()
 
 # TODO add limit about MAXPAYLOAD
 main()

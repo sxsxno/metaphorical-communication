@@ -34,7 +34,7 @@ boss_mode = {"enabled": False}
 
 # ========= Buffers =========
 log_buffer = Buffer(read_only=False)
-biz_buffer = Buffer(read_only=False)
+commu_buffer = Buffer(read_only=False)
 input_buffer = Buffer()
 # ========= Log Panel =========
 log_panel = HSplit(
@@ -55,12 +55,12 @@ log_panel = HSplit(
 biz_panel = HSplit(
     [
         Window(
-            FormattedTextControl(" BUSINESS "),
+            FormattedTextControl(" Communication "),
             height=1,
             style="class:title",
         ),
         Window(
-            BufferControl(buffer=biz_buffer),
+            BufferControl(buffer=commu_buffer),
             wrap_lines=True,
         ),
     ],
@@ -97,17 +97,38 @@ root_container = HSplit(
 
 layout = Layout(root_container, focused_element=input_panel.children[1])
 
-# ========= Key Bindings =========
-kb = KeyBindings()
+# ========= Buffer API =========
+def print_log(text: str):
+    log_append_line(text)
+    
+def print_commu(text: str):
+    commu_append_line(text)
+def print_success(text: str):
+    log_append_line(f"[+] {text}")
+def print_failed(text: str):
+    log_append_line(f"[-] {text}")
 
-@kb.add("enter")
-def _(event):
-    text = input_buffer.text
+def log_append_line(text: str):
+    log_buffer.text += f"{text}\n"
+    log_buffer.cursor_position = len(log_buffer.text)
+
+def commu_append_line(text: str):
+    commu_buffer.text += f"{text}\n"
+    commu_buffer.cursor_position = len(commu_buffer.text)
+def get_input_text() -> str:
+    return input_buffer.text
+def clear_input_text():
     input_buffer.text = ""
 
-    log_buffer.text += f"\n[CMD] {text}"
-    biz_buffer.text = f"Last command:\n{text}"
-    log_buffer.cursor_position = len(log_buffer.text)
+# ========= Key Bindings =========
+kb = KeyBindings()
+kb_enter_handler = None
+@kb.add("enter")
+def _(event):
+    if kb_enter_handler:
+        input_text = get_input_text()
+        kb_enter_handler(input_text)
+
 
 @kb.add("c-c")
 @kb.add("c-d")
