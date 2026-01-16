@@ -36,23 +36,6 @@ async_time = 5
         
 
 # ========= Message Func ===========
-message_seq_num = 0  # Stop-and-Wait seq
-def send_frame_with_ack(payload: bytes, seq: int, retries=2, timeout=2):
-    global message_seq_num
-    for _ in range(retries):
-        send_frame(payload, seq)
-        start = time.time()
-        while (time.time() - start) < timeout:
-            rseq, rpayload = receive_frame(deadline=timeout)
-            if rpayload == b"\x01\x01ACK" and rseq == seq:
-                logger.info("ACK received")
-                
-                message_seq_num += 1  # 切换 seq
-                message_seq_num %= 256
-                return True
-        # 超时重试
-    logger.warning("send failed after retries")
-    return False
 
 last_message =  ""
 def frame_dispatcher(seq, payload, ack_retry:int=1,mode="unlisten"):
