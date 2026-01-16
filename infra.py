@@ -80,7 +80,7 @@ class Magic_serial:
             buf.extend(chunk)
         return bytes(buf)
 
-    def receive_frame(self, deadline=10):
+    def receive_frame(self, deadline=10000):
         self.logger.info(f"enter receiving mode")
         data = bytearray()
         magic = bytearray()
@@ -99,7 +99,6 @@ class Magic_serial:
             if len(header) < HEADER_SIZE:
                 continue
             type, seq, nonce, length, chksum= struct.unpack(HEADER_FMT, header)
-
             payload = self.read_exact(length, deadline)
             if len(payload) < length:
                 continue
@@ -111,13 +110,13 @@ class Magic_serial:
             return payload, type, seq, length, frame_hash
         return None, None, None, None, frame_hash
     
-    def send_frame_with_ack(self, payload: bytes, retries=2, timeout=2):
+    def send_frame_with_ack(self, payload: bytes, retries=2, timeout=5):
         for _ in range(retries):
             self.send_frame(payload, self.message_seq_num)
             start = time.time()
             while (time.time() - start) < timeout:
                 _, rtype, rseq, _, _ = self.receive_frame(deadline=timeout)
-                if rtype == b"\x01" and rseq == self.message_seq_num:
+                if rtype == 1 and rseq == self.message_seq_num:
                     self.logger.info("ACK received")
                     
                     self.message_seq_num = (self.message_seq_num + 1 ) % 256
@@ -131,7 +130,6 @@ class Magic_serial:
         
         if frame_hash == None:
             return None
-        
         if type == b"\x01": 
             # repated ACK
             return None
