@@ -148,10 +148,11 @@ def background_worker(ser: Magic_serial):
                 if res:
                     print_success(task)
                     _task_update(task_id, status="completed", result={"ok": True})
+                    _event_add("chat.message", {"from": sender, "text": text, "via": via, "ok": bool(res)})
                 else:
                     print_failed(task)
                     _task_update(task_id, status="failed", result={"ok": False})
-                _event_add("chat.message", {"from": sender, "text": text, "via": via, "ok": bool(res)})
+                
             # elif task["kind"] == "sendfile":
             #     file_name = task["payload"]["file_path"]
             #     file_receiver = task["payload"]["receiver"]
@@ -176,26 +177,26 @@ def background_worker(ser: Magic_serial):
             _task_update(task_id, status="failed", error=str(e))
             
 
-def foreground_shell(cmd):
-    if cmd in ("exit", "quit"):
-        return
-    # cmd = cmd.split(" ")
-    if cmd.startswith("message"):
-        if len(cmd) < 6:
-            print("Usage: message <message>")
-            return
-        # send_frame(payload=cmd[1].encode(),seq=0)
-        task_id = _task_put("message", {"text": cmd[8:]})
-        print(f"message send task added: {cmd[8:]} (task_id={task_id})")
-    # if cmd.startswith("sendfile"):
-    #     if len(cmd) < 10:
-    #         print("Usage: sendfile filename")
-    #     cmd_content = cmd[9:]
-    #     cmd_content = cmd_content.split(" ")
+# def foreground_shell(cmd):
+#     if cmd in ("exit", "quit"):
+#         return
+#     # cmd = cmd.split(" ")
+#     if cmd.startswith("message"):
+#         if len(cmd) < 6:
+#             print("Usage: message <message>")
+#             return
+#         # send_frame(payload=cmd[1].encode(),seq=0)
+#         task_id = _task_put("message", {"text": cmd[8:]})
+#         print(f"message send task added: {cmd[8:]} (task_id={task_id})")
+#     # if cmd.startswith("sendfile"):
+#     #     if len(cmd) < 10:
+#     #         print("Usage: sendfile filename")
+#     #     cmd_content = cmd[9:]
+#     #     cmd_content = cmd_content.split(" ")
 
-    #     task_id = _task_put("sendfile", {"file_path": cmd_content[0], "receiver": cmd_content[1]})
-    #     print(f"sendfile task added: {cmd_content[0],cmd_content[1]} (task_id={task_id})")
-set_enter_handler(foreground_shell)
+#     #     task_id = _task_put("sendfile", {"file_path": cmd_content[0], "receiver": cmd_content[1]})
+#     #     print(f"sendfile task added: {cmd_content[0],cmd_content[1]} (task_id={task_id})")
+# set_enter_handler(foreground_shell)
 
 # def cmd_dispatcher(cmd):
 #     if cmd in ("exit", "quit"):

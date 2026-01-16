@@ -6,7 +6,7 @@ import sys
 import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
-
+import UI
 
 def _normalize_server(server):
     server = (server or "").strip()

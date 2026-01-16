@@ -37,7 +37,7 @@ class Magic_serial:
         port,
         username = "anonymous",
         bitrate=9600,
-        timeout=1,
+        timeout=3,
         logger_name='my_logger',
         logger_level=logging.DEBUG,
     ):
